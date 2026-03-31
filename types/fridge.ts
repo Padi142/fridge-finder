@@ -10,6 +10,15 @@ export interface FridgeItem {
   confidence?: number;
 }
 
+export type CompartmentType = "fridge" | "freezer" | "pantry" | "cabinet";
+
+export interface FridgeCompartment {
+  id: string;
+  name: string;
+  type: CompartmentType;
+  isConfigured: boolean;
+}
+
 export type FoodCategory =
   | "dairy"
   | "meat"

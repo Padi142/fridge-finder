@@ -6,6 +6,7 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { AccountProvider } from "@/context/AccountContext";
 import { FridgeProvider } from "@/context/FridgeContext";
 
 void SplashScreen.preventAutoHideAsync();
@@ -27,11 +28,13 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <FridgeProvider>
-        <GestureHandlerRootView>
-          <RootLayoutNav />
-        </GestureHandlerRootView>
-      </FridgeProvider>
+      <AccountProvider>
+        <FridgeProvider>
+          <GestureHandlerRootView>
+            <RootLayoutNav />
+          </GestureHandlerRootView>
+        </FridgeProvider>
+      </AccountProvider>
     </QueryClientProvider>
   );
 }

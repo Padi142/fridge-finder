@@ -1,0 +1,20 @@
+{
+  "name": "backend",
+  "version": "1.0.50",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "bun run --watch src/index.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^2.0.37",
+    "@elysiajs/openapi": "^1.4.14",
+    "@openrouter/ai-sdk-provider": "^2.3.3",
+    "ai": "^6.0.141",
+    "elysia": "latest",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "bun-types": "latest"
+  },
+  "module": "src/index.js"
+}

@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "FridgeFinder",
-    "slug": "FridgeFinder",
+    "slug": "fridgefinder",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -55,6 +55,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0d3508a2-7f97-4bc0-a7c5-0c1d51acb6ea"
+      }
+    },
+    "owner": "padi142"
   }
 }

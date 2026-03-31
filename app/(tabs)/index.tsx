@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   Image,
   RefreshControl,
+  TextInput,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFridge } from "@/context/FridgeContext";
@@ -18,10 +20,22 @@ import {
 } from "@/types/fridge";
 import palette from "@/constants/colors";
 import { AlertTriangle, Trash2, Clock } from "lucide-react-native";
+import { useAccount } from "@/context/AccountContext";
 
 export default function HomeScreen() {
-  const { items, isLoading, removeItem } = useFridge();
+  const { isLoggedIn, createAnonymousSession } = useAccount();
+  const {
+    compartment,
+    hasCompartment,
+    items,
+    isLoading,
+    isMutating,
+    removeItem,
+    createCompartment,
+    refresh,
+  } = useFridge();
   const [refreshing, setRefreshing] = useState(false);
+  const [compartmentName, setCompartmentName] = useState("");
   const insets = useSafeAreaInsets();
 
   const sortedItems = useMemo(() => {
@@ -52,9 +66,25 @@ export default function HomeScreen() {
     };
   }, [items]);
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 500);
+    try {
+      await refresh();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleCreateCompartment = async () => {
+    try {
+      await createCompartment(compartmentName);
+      setCompartmentName("");
+    } catch (error) {
+      Alert.alert(
+        "Unable to Create Compartment",
+        error instanceof Error ? error.message : "Please try again.",
+      );
+    }
   };
 
   const getStatusColor = (status: ExpiryStatus) => {
@@ -123,7 +153,9 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           className="mr-1 p-3"
-          onPress={() => removeItem(item.id)}
+          onPress={() => {
+            void removeItem(item.id);
+          }}
           testID={`delete-${item.id}`}
         >
           <Trash2 size={18} color={palette.light.textSecondary} />
@@ -132,10 +164,64 @@ export default function HomeScreen() {
     );
   };
 
+  if (!isLoggedIn) {
+    return (
+      <View className="flex-1 items-center justify-center bg-[#f8faf7] px-4">
+        <Text className="mb-4 text-center text-[22px] font-bold text-[#1a1a1a]">Welcome to FridgeFinder!</Text>
+        <Text className="mb-6 text-center text-[15px] text-[#666666]">
+          To start tracking your fridge, please sign in anonymously. This creates an Appwrite-backed account for this device so your fridge data can be loaded from the cloud.
+        </Text>
+        <TouchableOpacity
+          className="rounded-2xl bg-[#007AFF] px-6 py-3"
+          onPress={() => void createAnonymousSession()}
+        >
+          <Text className="text-center font-semibold text-white">Sign In Anonymously</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-[#f8faf7]">
         <Text className="text-base text-[#666666]">Loading your fridge...</Text>
+      </View>
+    );
+  }
+
+  if (!hasCompartment) {
+    return (
+      <View className="flex-1 justify-center bg-[#f8faf7] px-6">
+        <View className="rounded-[28px] bg-white p-6">
+          <Text className="mb-2 text-[28px] font-extrabold text-[#1a1a1a]">
+            Create your first fridge
+          </Text>
+          <Text className="mb-5 text-[15px] leading-6 text-[#666666]">
+            You do not have a fridge compartment yet. Create one before adding items.
+          </Text>
+
+          <TextInput
+            value={compartmentName}
+            onChangeText={setCompartmentName}
+            placeholder="My fridge"
+            className="rounded-2xl border border-[#E5E7EB] bg-[#F8FAF7] px-4 py-4 text-base text-[#1a1a1a]"
+            editable={!isMutating}
+            maxLength={100}
+          />
+
+          <TouchableOpacity
+            className="mt-4 rounded-2xl px-6 py-4"
+            style={{ backgroundColor: palette.light.tint, opacity: isMutating ? 0.7 : 1 }}
+            onPress={() => {
+              void handleCreateCompartment();
+            }}
+            disabled={isMutating}
+          >
+            <Text className="text-center text-base font-bold text-white">
+              {isMutating ? "Creating..." : "Create Compartment"}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -146,6 +232,9 @@ export default function HomeScreen() {
       style={{ paddingBottom: insets.bottom + 80 }}
     >
       <View className="p-4">
+        <Text className="mb-3 text-[24px] font-extrabold text-[#1a1a1a]">
+          {compartment?.name ?? "Your fridge"}
+        </Text>
         <View className="flex-row gap-3">
           <View className="flex-1 items-center rounded-2xl bg-[#E8F5E9] p-4">
             <Text className="text-2xl font-extrabold" style={{ color: palette.light.fresh }}>

@@ -1,118 +1,230 @@
 import createContextHook from "@nkzw/create-context-hook";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { FridgeItem, DetectedItem } from "@/types/fridge";
+import { useCallback, useMemo } from "react";
+
+import { useAccount } from "@/context/AccountContext";
+import {
+  createCompartmentRow,
+  createItemRow,
+  deleteItemRow,
+  listCompartmentItems,
+  listUserCompartments,
+  mapCompartmentRow,
+  mapItemRow,
+  updateItemRow,
+} from "@/lib/appwrite/fridge";
+import type { DetectedItem, FridgeCompartment, FridgeItem } from "@/types/fridge";
 
 interface FridgeContextValue {
+  compartment: FridgeCompartment | null;
+  hasCompartment: boolean;
   items: FridgeItem[];
   isLoading: boolean;
-  addItem: (item: Omit<FridgeItem, "id" | "dateAdded">) => void;
-  removeItem: (id: string) => void;
-  updateItem: (id: string, updates: Partial<FridgeItem>) => void;
-  addDetectedItems: (items: DetectedItem[], imageUri?: string) => void;
+  isMutating: boolean;
+  createCompartment: (name: string) => Promise<void>;
+  refresh: () => Promise<void>;
+  addItem: (item: Omit<FridgeItem, "id" | "dateAdded">) => Promise<void>;
+  removeItem: (id: string) => Promise<void>;
+  updateItem: (id: string, updates: Partial<FridgeItem>) => Promise<void>;
+  addDetectedItems: (items: DetectedItem[], imageUri?: string) => Promise<void>;
 }
-
-const STORAGE_KEY = "fridge_items";
 
 const useFridgeContext = () => {
   const queryClient = useQueryClient();
-  const [items, setItems] = useState<FridgeItem[]>([]);
+  const { account } = useAccount();
+  const userId = account?.$id ?? null;
 
-  const { data: storedItems, isLoading } = useQuery({
-    queryKey: ["fridge-items"],
+  const compartmentQuery = useQuery({
+    queryKey: ["fridge-compartment", userId],
+    enabled: Boolean(userId),
     queryFn: async () => {
-      const stored = await AsyncStorage.getItem(STORAGE_KEY);
-      return stored ? (JSON.parse(stored) as FridgeItem[]) : [];
+      if (!userId) {
+        return null;
+      }
+
+      const result = await listUserCompartments(userId);
+      return result.rows[0] ?? null;
     },
   });
 
-  useEffect(() => {
-    if (storedItems) {
-      setItems(storedItems);
+  const compartmentId = compartmentQuery.data?.$id ?? null;
+
+  const itemsQuery = useQuery({
+    queryKey: ["fridge-items", compartmentId],
+    enabled: Boolean(compartmentId),
+    queryFn: async () => {
+      if (!compartmentId) {
+        return [];
+      }
+
+      const result = await listCompartmentItems(compartmentId);
+      return result.rows.map(mapItemRow);
+    },
+  });
+
+  const invalidateFridge = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ["fridge-compartment", userId] });
+
+    if (compartmentId) {
+      await queryClient.invalidateQueries({ queryKey: ["fridge-items", compartmentId] });
     }
-  }, [storedItems]);
+  }, [compartmentId, queryClient, userId]);
 
-  const syncMutation = useMutation({
-    mutationFn: async (newItems: FridgeItem[]) => {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newItems));
-      return newItems;
+  const createCompartmentMutation = useMutation({
+    mutationFn: async (name: string) => {
+      if (!userId) {
+        throw new Error("Sign in before creating a compartment.");
+      }
+
+      const trimmedName = name.trim();
+
+      if (!trimmedName) {
+        throw new Error("Enter a compartment name.");
+      }
+
+      await createCompartmentRow(userId, trimmedName);
     },
-    onSuccess: (newItems) => {
-      queryClient.setQueryData(["fridge-items"], newItems);
+    onSuccess: async () => {
+      await invalidateFridge();
     },
   });
+
+  const addItemMutation = useMutation({
+    mutationFn: async (item: Omit<FridgeItem, "id" | "dateAdded">) => {
+      if (!compartmentId) {
+        throw new Error("Create a compartment before adding items.");
+      }
+
+      await createItemRow(compartmentId, item);
+    },
+    onSuccess: async () => {
+      await invalidateFridge();
+    },
+  });
+
+  const addDetectedItemsMutation = useMutation({
+    mutationFn: async (detectedItems: DetectedItem[]) => {
+      if (!compartmentId) {
+        throw new Error("Create a compartment before adding items.");
+      }
+
+      await Promise.all(
+        detectedItems.map(async (detected) => {
+          const expiryDate = new Date();
+          expiryDate.setDate(expiryDate.getDate() + detected.estimatedExpiryDays);
+
+          await createItemRow(compartmentId, {
+            name: detected.name,
+            quantity: detected.quantity,
+            unit: detected.unit,
+            category: detected.category,
+            expiryDate: expiryDate.toISOString(),
+            imageUri: undefined,
+            confidence: detected.confidence,
+          });
+        }),
+      );
+    },
+    onSuccess: async () => {
+      await invalidateFridge();
+    },
+  });
+
+  const removeItemMutation = useMutation({
+    mutationFn: deleteItemRow,
+    onSuccess: async () => {
+      await invalidateFridge();
+    },
+  });
+
+  const updateItemMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<FridgeItem> }) => {
+      await updateItemRow(id, updates);
+    },
+    onSuccess: async () => {
+      await invalidateFridge();
+    },
+  });
+
+  const compartment = compartmentQuery.data ? mapCompartmentRow(compartmentQuery.data) : null;
+
+  const createCompartment = useCallback(
+    async (name: string) => {
+      await createCompartmentMutation.mutateAsync(name);
+    },
+    [createCompartmentMutation],
+  );
+
+  const refresh = useCallback(async () => {
+    await invalidateFridge();
+  }, [invalidateFridge]);
 
   const addItem = useCallback(
-    (item: Omit<FridgeItem, "id" | "dateAdded">) => {
-      const newItem: FridgeItem = {
-        ...item,
-        id: Date.now().toString(),
-        dateAdded: new Date().toISOString(),
-      };
-      const updated = [...items, newItem];
-      setItems(updated);
-      syncMutation.mutate(updated);
+    async (item: Omit<FridgeItem, "id" | "dateAdded">) => {
+      await addItemMutation.mutateAsync(item);
     },
-    [items, syncMutation]
+    [addItemMutation],
   );
 
   const addDetectedItems = useCallback(
-    (detectedItems: DetectedItem[], imageUri?: string) => {
-      const newItems: FridgeItem[] = detectedItems.map((detected) => {
-        const expiryDate = new Date();
-        expiryDate.setDate(expiryDate.getDate() + detected.estimatedExpiryDays);
-
-        return {
-          id: `${Date.now()}-${Math.random()}`,
-          name: detected.name,
-          quantity: detected.quantity,
-          unit: detected.unit,
-          category: detected.category,
-          expiryDate: expiryDate.toISOString(),
-          dateAdded: new Date().toISOString(),
-          imageUri,
-          confidence: detected.confidence,
-        };
-      });
-
-      const updated = [...items, ...newItems];
-      setItems(updated);
-      syncMutation.mutate(updated);
+    async (items: DetectedItem[], _imageUri?: string) => {
+      await addDetectedItemsMutation.mutateAsync(items);
     },
-    [items, syncMutation]
+    [addDetectedItemsMutation],
   );
 
   const removeItem = useCallback(
-    (id: string) => {
-      const updated = items.filter((item) => item.id !== id);
-      setItems(updated);
-      syncMutation.mutate(updated);
+    async (id: string) => {
+      await removeItemMutation.mutateAsync(id);
     },
-    [items, syncMutation]
+    [removeItemMutation],
   );
 
   const updateItem = useCallback(
-    (id: string, updates: Partial<FridgeItem>) => {
-      const updated = items.map((item) =>
-        item.id === id ? { ...item, ...updates } : item
-      );
-      setItems(updated);
-      syncMutation.mutate(updated);
+    async (id: string, updates: Partial<FridgeItem>) => {
+      await updateItemMutation.mutateAsync({ id, updates });
     },
-    [items, syncMutation]
+    [updateItemMutation],
   );
 
   return useMemo(
     () => ({
-      items,
-      isLoading,
+      compartment,
+      hasCompartment: Boolean(compartment),
+      items: compartmentId ? itemsQuery.data ?? [] : [],
+      isLoading:
+        compartmentQuery.isLoading || (Boolean(compartmentId) && itemsQuery.isLoading),
+      isMutating:
+        createCompartmentMutation.isPending ||
+        addItemMutation.isPending ||
+        addDetectedItemsMutation.isPending ||
+        removeItemMutation.isPending ||
+        updateItemMutation.isPending,
+      createCompartment,
+      refresh,
       addItem,
       removeItem,
       updateItem,
       addDetectedItems,
     }),
-    [items, isLoading, addItem, removeItem, updateItem, addDetectedItems]
+    [
+      addDetectedItems,
+      addDetectedItemsMutation.isPending,
+      addItem,
+      addItemMutation.isPending,
+      compartment,
+      compartmentId,
+      compartmentQuery.isLoading,
+      createCompartment,
+      createCompartmentMutation.isPending,
+      itemsQuery.data,
+      itemsQuery.isLoading,
+      refresh,
+      removeItem,
+      removeItemMutation.isPending,
+      updateItem,
+      updateItemMutation.isPending,
+    ],
   );
 };
 

@@ -23,7 +23,7 @@ export default function AddScreen() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [detectedItems, setDetectedItems] = useState<DetectedItem[] | null>(null);
   const cameraRef = useRef<CameraView>(null);
-  const { addDetectedItems } = useFridge();
+  const { addDetectedItems, hasCompartment, isMutating } = useFridge();
   const analyzeImageMutation = useAnalyzeImageMutation();
 
   const handleRequestPermission = async () => {
@@ -83,8 +83,16 @@ export default function AddScreen() {
 
   const handleAddItems = () => {
     if (detectedItems) {
-      addDetectedItems(detectedItems, capturedImage ?? undefined);
-      resetState();
+      void addDetectedItems(detectedItems, capturedImage ?? undefined)
+        .then(() => {
+          resetState();
+        })
+        .catch((error) => {
+          Alert.alert(
+            "Unable to Add Items",
+            error instanceof Error ? error.message : "Please try again.",
+          );
+        });
     }
   };
 
@@ -227,9 +235,12 @@ export default function AddScreen() {
               className="flex-1 flex-row items-center justify-center gap-2 rounded-[14px] py-4"
               style={{ backgroundColor: palette.light.tint }}
               onPress={handleAddItems}
+              disabled={isMutating}
             >
               <Check size={20} color="white" />
-              <Text className="text-base font-bold text-white">Add to Fridge</Text>
+              <Text className="text-base font-bold text-white">
+                {isMutating ? "Adding..." : "Add to Fridge"}
+              </Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -240,6 +251,15 @@ export default function AddScreen() {
   return (
     <View className="flex-1 bg-[#f8faf7]">
       <View className="flex-1 justify-center p-6">
+        {!hasCompartment && (
+          <View className="mb-6 rounded-2xl bg-[#FFF3E0] p-4">
+            <Text className="text-sm font-bold text-[#1a1a1a]">Create a compartment first</Text>
+            <Text className="mt-1 text-sm leading-5 text-[#666666]">
+              Your Appwrite account does not have a compartment yet. Create one from the home tab before scanning items.
+            </Text>
+          </View>
+        )}
+
         <Text className="mb-2 text-center text-[28px] font-extrabold text-[#1a1a1a]">
           Add Items to Fridge
         </Text>
@@ -258,6 +278,7 @@ export default function AddScreen() {
               elevation: 4,
             }}
             onPress={() => setMode("camera")}
+            disabled={!hasCompartment}
           >
             <View className="mb-4 h-[72px] w-[72px] items-center justify-center rounded-full bg-[#E8F5E9]">
               <Camera size={32} color={palette.light.tint} />
@@ -276,6 +297,7 @@ export default function AddScreen() {
               elevation: 4,
             }}
             onPress={pickImage}
+            disabled={!hasCompartment}
           >
             <View className="mb-4 h-[72px] w-[72px] items-center justify-center rounded-full bg-[#E3F2FD]">
               <ImageIcon size={32} color="#2196F3" />

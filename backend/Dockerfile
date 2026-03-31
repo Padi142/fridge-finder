@@ -19,5 +19,5 @@ WORKDIR /usr/src/app
 COPY --from=builder /usr/src/app/dist ./dist
 COPY --from=builder /usr/src/app/node_modules /usr/src/app/node_modules
 COPY package.json ./
-EXPOSE 3003
+EXPOSE 3005
 CMD ["node", "dist/index.js"]

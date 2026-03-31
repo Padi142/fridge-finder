@@ -1,98 +1,205 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { useMemo, useState } from "react";
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  Image,
+  RefreshControl,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFridge } from "@/context/FridgeContext";
+import {
+  getExpiryStatus,
+  getDaysUntilExpiry,
+  categoryIcons,
+  type FridgeItem,
+  type ExpiryStatus,
+} from "@/types/fridge";
+import palette from "@/constants/colors";
+import { AlertTriangle, Trash2, Clock } from "lucide-react-native";
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const { items, isLoading, removeItem } = useFridge();
+  const [refreshing, setRefreshing] = useState(false);
+  const insets = useSafeAreaInsets();
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      const statusA = getExpiryStatus(a.expiryDate);
+      const statusB = getExpiryStatus(b.expiryDate);
+
+      const priority: Record<ExpiryStatus, number> = {
+        expired: 0,
+        expiringSoon: 1,
+        fresh: 2,
+      };
+
+      if (priority[statusA] !== priority[statusB]) {
+        return priority[statusA] - priority[statusB];
+      }
+
+      return new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime();
+    });
+  }, [items]);
+
+  const stats = useMemo(() => {
+    return {
+      total: items.length,
+      expired: items.filter((i) => getExpiryStatus(i.expiryDate) === "expired").length,
+      expiringSoon: items.filter((i) => getExpiryStatus(i.expiryDate) === "expiringSoon").length,
+      fresh: items.filter((i) => getExpiryStatus(i.expiryDate) === "fresh").length,
+    };
+  }, [items]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 500);
+  };
+
+  const getStatusColor = (status: ExpiryStatus) => {
+    switch (status) {
+      case "expired":
+        return palette.light.expired;
+      case "expiringSoon":
+        return palette.light.expiringSoon;
+      case "fresh":
+        return palette.light.fresh;
+    }
+  };
+
+  const getStatusText = (status: ExpiryStatus, days: number) => {
+    switch (status) {
+      case "expired":
+        return `Expired ${Math.abs(days)} day${Math.abs(days) !== 1 ? "s" : ""} ago`;
+      case "expiringSoon":
+        return days === 0 ? "Expires today" : `${days} day${days !== 1 ? "s" : ""} left`;
+      case "fresh":
+        return `${days} days left`;
+    }
+  };
+
+  const renderItem = ({ item }: { item: FridgeItem }) => {
+    const status = getExpiryStatus(item.expiryDate);
+    const days = getDaysUntilExpiry(item.expiryDate);
+    const statusColor = getStatusColor(status);
+
+    return (
+      <View
+        className="flex-row items-center overflow-hidden rounded-2xl bg-white"
+        style={{
+          shadowColor: palette.light.shadow,
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 8,
+          elevation: 3,
+        }}
+      >
+        <View className="h-full w-1" style={{ backgroundColor: statusColor }} />
+        {item.imageUri && (
+          <Image
+            source={{ uri: item.imageUri }}
+            className="ml-3 h-[60px] w-[60px] rounded-lg"
+          />
+        )}
+        <View className="flex-1 p-4">
+          <View className="flex-row items-center gap-2">
+            <Text className="text-2xl">{categoryIcons[item.category]}</Text>
+            <View className="flex-1">
+              <Text className="text-base font-bold text-[#1a1a1a]">{item.name}</Text>
+              <Text className="mt-0.5 text-[13px] text-[#666666]">
+                {item.quantity} {item.unit}
+              </Text>
+            </View>
+          </View>
+
+          <View className="mt-2 flex-row items-center gap-1.5">
+            <Clock size={14} color={statusColor} />
+            <Text className="text-[13px] font-semibold" style={{ color: statusColor }}>
+              {getStatusText(status, days)}
+            </Text>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          className="mr-1 p-3"
+          onPress={() => removeItem(item.id)}
+          testID={`delete-${item.id}`}
+        >
+          <Trash2 size={18} color={palette.light.textSecondary} />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <View className="flex-1 items-center justify-center bg-[#f8faf7]">
+        <Text className="text-base text-[#666666]">Loading your fridge...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View
+      className="flex-1 bg-[#f8faf7]"
+      style={{ paddingBottom: insets.bottom + 80 }}
+    >
+      <View className="p-4">
+        <View className="flex-row gap-3">
+          <View className="flex-1 items-center rounded-2xl bg-[#E8F5E9] p-4">
+            <Text className="text-2xl font-extrabold" style={{ color: palette.light.fresh }}>
+              {stats.fresh}
+            </Text>
+            <Text className="mt-1 text-xs font-semibold text-[#666666]">Fresh</Text>
+          </View>
+          <View className="flex-1 items-center rounded-2xl bg-[#FFF3E0] p-4">
+            <Text
+              className="text-2xl font-extrabold"
+              style={{ color: palette.light.expiringSoon }}
+            >
+              {stats.expiringSoon}
+            </Text>
+            <Text className="mt-1 text-xs font-semibold text-[#666666]">Expiring</Text>
+          </View>
+          <View className="flex-1 items-center rounded-2xl bg-[#FFEBEE] p-4">
+            <Text className="text-2xl font-extrabold" style={{ color: palette.light.expired }}>
+              {stats.expired}
+            </Text>
+            <Text className="mt-1 text-xs font-semibold text-[#666666]">Expired</Text>
+          </View>
+        </View>
+
+        {stats.expired > 0 && (
+          <View className="mt-3 flex-row items-center justify-center gap-2 rounded-xl bg-[#FFEBEE] p-3">
+            <AlertTriangle size={20} color={palette.light.expired} />
+            <Text className="font-semibold" style={{ color: palette.light.expired }}>
+              You have {stats.expired} expired item{stats.expired !== 1 ? "s" : ""}!
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {items.length === 0 ? (
+        <View className="flex-1 items-center justify-center px-8">
+          <Text className="mb-4 text-[64px]">🥗</Text>
+          <Text className="mb-2 text-[22px] font-bold text-[#1a1a1a]">Your fridge is empty</Text>
+          <Text className="text-center text-[15px] text-[#666666]">
+            Tap Add Items to start tracking your food
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={sortedItems}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 12 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+        />
+      )}
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
-});

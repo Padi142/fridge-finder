@@ -13,7 +13,11 @@ import {
   mapItemRow,
   updateItemRow,
 } from "@/lib/appwrite/fridge";
-import type { DetectedItem, FridgeCompartment, FridgeItem } from "@/types/fridge";
+import type {
+  DetectedItemInput,
+  FridgeCompartment,
+  FridgeItem,
+} from "@/types/fridge";
 
 interface FridgeContextValue {
   compartment: FridgeCompartment | null;
@@ -26,7 +30,10 @@ interface FridgeContextValue {
   addItem: (item: Omit<FridgeItem, "id" | "dateAdded">) => Promise<void>;
   removeItem: (id: string) => Promise<void>;
   updateItem: (id: string, updates: Partial<FridgeItem>) => Promise<void>;
-  addDetectedItems: (items: DetectedItem[], imageUri?: string) => Promise<void>;
+  addDetectedItems: (
+    items: DetectedItemInput[],
+    imageUri?: string,
+  ) => Promise<void>;
 }
 
 const useFridgeContext = () => {
@@ -63,10 +70,14 @@ const useFridgeContext = () => {
   });
 
   const invalidateFridge = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: ["fridge-compartment", userId] });
+    await queryClient.invalidateQueries({
+      queryKey: ["fridge-compartment", userId],
+    });
 
     if (compartmentId) {
-      await queryClient.invalidateQueries({ queryKey: ["fridge-items", compartmentId] });
+      await queryClient.invalidateQueries({
+        queryKey: ["fridge-items", compartmentId],
+      });
     }
   }, [compartmentId, queryClient, userId]);
 
@@ -103,22 +114,19 @@ const useFridgeContext = () => {
   });
 
   const addDetectedItemsMutation = useMutation({
-    mutationFn: async (detectedItems: DetectedItem[]) => {
+    mutationFn: async (detectedItems: DetectedItemInput[]) => {
       if (!compartmentId) {
         throw new Error("Create a compartment before adding items.");
       }
 
       await Promise.all(
         detectedItems.map(async (detected) => {
-          const expiryDate = new Date();
-          expiryDate.setDate(expiryDate.getDate() + detected.estimatedExpiryDays);
-
           await createItemRow(compartmentId, {
             name: detected.name,
             quantity: detected.quantity,
             unit: detected.unit,
             category: detected.category,
-            expiryDate: expiryDate.toISOString(),
+            expiryDate: detected.expiryDate,
             imageUri: undefined,
             confidence: detected.confidence,
           });
@@ -138,7 +146,13 @@ const useFridgeContext = () => {
   });
 
   const updateItemMutation = useMutation({
-    mutationFn: async ({ id, updates }: { id: string; updates: Partial<FridgeItem> }) => {
+    mutationFn: async ({
+      id,
+      updates,
+    }: {
+      id: string;
+      updates: Partial<FridgeItem>;
+    }) => {
       await updateItemRow(id, updates);
     },
     onSuccess: async () => {
@@ -146,7 +160,9 @@ const useFridgeContext = () => {
     },
   });
 
-  const compartment = compartmentQuery.data ? mapCompartmentRow(compartmentQuery.data) : null;
+  const compartment = compartmentQuery.data
+    ? mapCompartmentRow(compartmentQuery.data)
+    : null;
 
   const createCompartment = useCallback(
     async (name: string) => {
@@ -167,7 +183,7 @@ const useFridgeContext = () => {
   );
 
   const addDetectedItems = useCallback(
-    async (items: DetectedItem[], _imageUri?: string) => {
+    async (items: DetectedItemInput[], _imageUri?: string) => {
       await addDetectedItemsMutation.mutateAsync(items);
     },
     [addDetectedItemsMutation],
@@ -191,9 +207,10 @@ const useFridgeContext = () => {
     () => ({
       compartment,
       hasCompartment: Boolean(compartment),
-      items: compartmentId ? itemsQuery.data ?? [] : [],
+      items: compartmentId ? (itemsQuery.data ?? []) : [],
       isLoading:
-        compartmentQuery.isLoading || (Boolean(compartmentId) && itemsQuery.isLoading),
+        compartmentQuery.isLoading ||
+        (Boolean(compartmentId) && itemsQuery.isLoading),
       isMutating:
         createCompartmentMutation.isPending ||
         addItemMutation.isPending ||
@@ -228,5 +245,6 @@ const useFridgeContext = () => {
   );
 };
 
-export const [FridgeContext, useFridge] = createContextHook<FridgeContextValue>(useFridgeContext);
+export const [FridgeContext, useFridge] =
+  createContextHook<FridgeContextValue>(useFridgeContext);
 export const FridgeProvider = FridgeContext;

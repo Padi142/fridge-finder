@@ -1,26 +1,34 @@
+import palette from "@/constants/colors";
+import { useAccount } from "@/context/AccountContext";
+import { useFridge } from "@/context/FridgeContext";
+import { formatDateInput, parseDateInput } from "@/lib/date";
+import {
+  categoryIcons,
+  getDaysUntilExpiry,
+  getExpiryStatus,
+  type ExpiryStatus,
+  type FridgeItem,
+} from "@/types/fridge";
+import {
+  AlertCircle,
+  Check,
+  Clock,
+  Package,
+  Pencil,
+  Trash2,
+  X,
+} from "lucide-react-native";
 import { useMemo, useState } from "react";
 import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  Image,
-  RefreshControl,
-  TextInput,
   Alert,
+  FlatList,
+  RefreshControl,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useFridge } from "@/context/FridgeContext";
-import {
-  getExpiryStatus,
-  getDaysUntilExpiry,
-  categoryIcons,
-  type FridgeItem,
-  type ExpiryStatus,
-} from "@/types/fridge";
-import palette from "@/constants/colors";
-import { AlertTriangle, Trash2, Clock } from "lucide-react-native";
-import { useAccount } from "@/context/AccountContext";
 
 export default function HomeScreen() {
   const { isLoggedIn, createAnonymousSession } = useAccount();
@@ -33,9 +41,13 @@ export default function HomeScreen() {
     removeItem,
     createCompartment,
     refresh,
+    updateItem,
   } = useFridge();
   const [refreshing, setRefreshing] = useState(false);
   const [compartmentName, setCompartmentName] = useState("");
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const [draftExpiryDate, setDraftExpiryDate] = useState("");
   const insets = useSafeAreaInsets();
 
   const sortedItems = useMemo(() => {
@@ -53,21 +65,30 @@ export default function HomeScreen() {
         return priority[statusA] - priority[statusB];
       }
 
-      return new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime();
+      return (
+        new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime()
+      );
     });
   }, [items]);
 
   const stats = useMemo(() => {
     return {
       total: items.length,
-      expired: items.filter((i) => getExpiryStatus(i.expiryDate) === "expired").length,
-      expiringSoon: items.filter((i) => getExpiryStatus(i.expiryDate) === "expiringSoon").length,
-      fresh: items.filter((i) => getExpiryStatus(i.expiryDate) === "fresh").length,
+      expired: items.filter(
+        (item) => getExpiryStatus(item.expiryDate) === "expired",
+      ).length,
+      expiringSoon: items.filter(
+        (item) => getExpiryStatus(item.expiryDate) === "expiringSoon",
+      ).length,
+      fresh: items.filter(
+        (item) => getExpiryStatus(item.expiryDate) === "fresh",
+      ).length,
     };
   }, [items]);
 
   const onRefresh = async () => {
     setRefreshing(true);
+
     try {
       await refresh();
     } finally {
@@ -87,6 +108,49 @@ export default function HomeScreen() {
     }
   };
 
+  const startEditingItem = (item: FridgeItem) => {
+    setEditingItemId(item.id);
+    setDraftName(item.name);
+    setDraftExpiryDate(formatDateInput(item.expiryDate));
+  };
+
+  const cancelEditingItem = () => {
+    setEditingItemId(null);
+    setDraftName("");
+    setDraftExpiryDate("");
+  };
+
+  const saveItemChanges = async (itemId: string) => {
+    const trimmedName = draftName.trim();
+    const parsedExpiryDate = parseDateInput(draftExpiryDate);
+
+    if (!trimmedName) {
+      Alert.alert("Missing Name", "Enter a product name before saving.");
+      return;
+    }
+
+    if (!parsedExpiryDate) {
+      Alert.alert(
+        "Invalid Expiry Date",
+        "Enter the expiry date in YYYY-MM-DD format.",
+      );
+      return;
+    }
+
+    try {
+      await updateItem(itemId, {
+        name: trimmedName,
+        expiryDate: parsedExpiryDate,
+      });
+      cancelEditingItem();
+    } catch (error) {
+      Alert.alert(
+        "Unable to Update Item",
+        error instanceof Error ? error.message : "Please try again.",
+      );
+    }
+  };
+
   const getStatusColor = (status: ExpiryStatus) => {
     switch (status) {
       case "expired":
@@ -101,11 +165,11 @@ export default function HomeScreen() {
   const getStatusText = (status: ExpiryStatus, days: number) => {
     switch (status) {
       case "expired":
-        return `Expired ${Math.abs(days)} day${Math.abs(days) !== 1 ? "s" : ""} ago`;
+        return `${Math.abs(days)}d ago`;
       case "expiringSoon":
-        return days === 0 ? "Expires today" : `${days} day${days !== 1 ? "s" : ""} left`;
+        return days === 0 ? "Today" : `${days}d left`;
       case "fresh":
-        return `${days} days left`;
+        return `${days}d left`;
     }
   };
 
@@ -113,69 +177,214 @@ export default function HomeScreen() {
     const status = getExpiryStatus(item.expiryDate);
     const days = getDaysUntilExpiry(item.expiryDate);
     const statusColor = getStatusColor(status);
+    const isEditing = editingItemId === item.id;
 
     return (
       <View
-        className="flex-row items-center overflow-hidden rounded-2xl bg-white"
+        className="flex-row overflow-hidden rounded-[28px] border-2 border-[#F0F0F0] bg-white"
         style={{
           shadowColor: palette.light.shadow,
           shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 8,
-          elevation: 3,
+          shadowOpacity: 1,
+          shadowRadius: 0,
+          elevation: 2,
         }}
       >
-        <View className="h-full w-1" style={{ backgroundColor: statusColor }} />
-        {item.imageUri && (
-          <Image
-            source={{ uri: item.imageUri }}
-            className="ml-3 h-[60px] w-[60px] rounded-lg"
-          />
-        )}
+        <View
+          className="w-1.5 self-stretch"
+          style={{ backgroundColor: statusColor }}
+        />
+
         <View className="flex-1 p-4">
-          <View className="flex-row items-center gap-2">
-            <Text className="text-2xl">{categoryIcons[item.category]}</Text>
-            <View className="flex-1">
-              <Text className="text-base font-bold text-[#1a1a1a]">{item.name}</Text>
-              <Text className="mt-0.5 text-[13px] text-[#666666]">
-                {item.quantity} {item.unit}
-              </Text>
+          <View className="flex-row items-start gap-3">
+            <View className="h-12 w-12 items-center justify-center rounded-2xl bg-[#FAFAFA]">
+              <Text className="text-2xl">{categoryIcons[item.category]}</Text>
+            </View>
+
+            <View className="flex-1" style={{ minWidth: 0 }}>
+              {isEditing ? (
+                <View className="gap-3">
+                  <View>
+                    <Text
+                      className="mb-1 text-[11px] font-bold uppercase tracking-[1.4px] text-[#9A9A9A]"
+                      style={{ fontFamily: "Poppins" }}
+                    >
+                      Name
+                    </Text>
+                    <TextInput
+                      value={draftName}
+                      onChangeText={setDraftName}
+                      placeholder="Milk"
+                      placeholderTextColor="#9A9A9A"
+                      className="rounded-2xl border-2 border-[#E8E8E8] bg-[#FAFAFA] px-4 py-3 text-[15px] text-[#0F0F0F]"
+                      style={{ fontFamily: "Poppins" }}
+                      editable={!isMutating}
+                      maxLength={120}
+                      autoCapitalize="words"
+                    />
+                  </View>
+
+                  <View>
+                    <Text
+                      className="mb-1 text-[11px] font-bold uppercase tracking-[1.4px] text-[#9A9A9A]"
+                      style={{ fontFamily: "Poppins" }}
+                    >
+                      Expiry Date
+                    </Text>
+                    <TextInput
+                      value={draftExpiryDate}
+                      onChangeText={setDraftExpiryDate}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor="#9A9A9A"
+                      className="rounded-2xl border-2 border-[#E8E8E8] bg-[#FAFAFA] px-4 py-3 text-[15px] text-[#0F0F0F]"
+                      style={{ fontFamily: "Poppins" }}
+                      editable={!isMutating}
+                      maxLength={10}
+                      keyboardType="numbers-and-punctuation"
+                    />
+                  </View>
+
+                  <Text
+                    className="text-[13px] font-medium text-[#6B6B6B]"
+                    style={{ fontFamily: "Poppins" }}
+                  >
+                    {item.quantity} {item.unit}
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <Text
+                    className="text-[16px] font-semibold text-[#0F0F0F]"
+                    style={{ fontFamily: "Poppins" }}
+                    numberOfLines={1}
+                  >
+                    {item.name}
+                  </Text>
+                  <Text
+                    className="mt-1 text-[13px] font-medium text-[#6B6B6B]"
+                    style={{ fontFamily: "Poppins" }}
+                    numberOfLines={1}
+                  >
+                    {item.quantity} {item.unit}
+                  </Text>
+                  <Text
+                    className="mt-1 text-[13px] font-medium text-[#9A9A9A]"
+                    style={{ fontFamily: "Poppins" }}
+                    numberOfLines={1}
+                  >
+                    Expires {formatDateInput(item.expiryDate)}
+                  </Text>
+                </>
+              )}
             </View>
           </View>
 
-          <View className="mt-2 flex-row items-center gap-1.5">
-            <Clock size={14} color={statusColor} />
-            <Text className="text-[13px] font-semibold" style={{ color: statusColor }}>
-              {getStatusText(status, days)}
-            </Text>
-          </View>
-        </View>
+          {isEditing ? (
+            <View className="mt-4 flex-row gap-2">
+              <TouchableOpacity
+                className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl bg-[#0F0F0F] py-3"
+                onPress={() => {
+                  void saveItemChanges(item.id);
+                }}
+                disabled={isMutating}
+              >
+                <Check size={18} color="white" />
+                <Text
+                  className="text-[14px] font-bold text-white"
+                  style={{ fontFamily: "Poppins" }}
+                >
+                  Save
+                </Text>
+              </TouchableOpacity>
 
-        <TouchableOpacity
-          className="mr-1 p-3"
-          onPress={() => {
-            void removeItem(item.id);
-          }}
-          testID={`delete-${item.id}`}
-        >
-          <Trash2 size={18} color={palette.light.textSecondary} />
-        </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border-2 border-[#E8E8E8] bg-white py-3"
+                onPress={cancelEditingItem}
+                disabled={isMutating}
+              >
+                <X size={18} color="#6B6B6B" />
+                <Text
+                  className="text-[14px] font-bold text-[#6B6B6B]"
+                  style={{ fontFamily: "Poppins" }}
+                >
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View className="mt-4 flex-row items-center justify-between gap-3">
+              <View
+                className="flex-row items-center gap-1 rounded-full px-3 py-1.5"
+                style={{ backgroundColor: `${statusColor}15` }}
+              >
+                <Clock size={12} color={statusColor} />
+                <Text
+                  className="text-[12px] font-bold"
+                  style={{ color: statusColor, fontFamily: "Poppins" }}
+                >
+                  {getStatusText(status, days)}
+                </Text>
+              </View>
+
+              <View className="flex-row gap-2">
+                <TouchableOpacity
+                  className="h-10 w-10 items-center justify-center rounded-2xl bg-[#FAFAFA]"
+                  onPress={() => startEditingItem(item)}
+                  disabled={isMutating}
+                  testID={`edit-${item.id}`}
+                >
+                  <Pencil size={16} color="#6B6B6B" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  className="h-10 w-10 items-center justify-center rounded-2xl bg-[#FAFAFA]"
+                  onPress={() => {
+                    void removeItem(item.id);
+                  }}
+                  disabled={isMutating}
+                  testID={`delete-${item.id}`}
+                >
+                  <Trash2 size={16} color="#9A9A9A" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
       </View>
     );
   };
 
   if (!isLoggedIn) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#f8faf7] px-4">
-        <Text className="mb-4 text-center text-[22px] font-bold text-[#1a1a1a]">Welcome to FridgeFinder!</Text>
-        <Text className="mb-6 text-center text-[15px] text-[#666666]">
-          To start tracking your fridge, please sign in anonymously. This creates an Appwrite-backed account for this device so your fridge data can be loaded from the cloud.
+      <View
+        className="flex-1 items-center justify-center bg-[#FAFAFA] px-6"
+        style={{ paddingTop: insets.top }}
+      >
+        <View className="mb-6 h-20 w-20 items-center justify-center rounded-3xl bg-[#00C853]">
+          <Package size={40} color="white" />
+        </View>
+        <Text
+          className="mb-2 text-center text-[28px] font-bold text-[#0F0F0F]"
+          style={{ fontFamily: "Poppins" }}
+        >
+          FridgeFinder
+        </Text>
+        <Text
+          className="mb-8 text-center text-[15px] font-medium text-[#6B6B6B]"
+          style={{ fontFamily: "Poppins" }}
+        >
+          Track your food, reduce waste
         </Text>
         <TouchableOpacity
-          className="rounded-2xl bg-[#007AFF] px-6 py-3"
+          className="w-full rounded-2xl bg-[#0F0F0F] px-6 py-4"
           onPress={() => void createAnonymousSession()}
         >
-          <Text className="text-center font-semibold text-white">Sign In Anonymously</Text>
+          <Text
+            className="text-center text-[15px] font-bold text-white"
+            style={{ fontFamily: "Poppins" }}
+          >
+            Get Started
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -183,41 +392,66 @@ export default function HomeScreen() {
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#f8faf7]">
-        <Text className="text-base text-[#666666]">Loading your fridge...</Text>
+      <View
+        className="flex-1 items-center justify-center bg-[#FAFAFA]"
+        style={{ paddingTop: insets.top }}
+      >
+        <Text
+          className="text-[15px] font-medium text-[#6B6B6B]"
+          style={{ fontFamily: "Poppins" }}
+        >
+          Loading your fridge...
+        </Text>
       </View>
     );
   }
 
   if (!hasCompartment) {
     return (
-      <View className="flex-1 justify-center bg-[#f8faf7] px-6">
-        <View className="rounded-[28px] bg-white p-6">
-          <Text className="mb-2 text-[28px] font-extrabold text-[#1a1a1a]">
-            Create your first fridge
+      <View
+        className="flex-1 justify-center bg-[#FAFAFA] px-6"
+        style={{ paddingTop: insets.top }}
+      >
+        <View className="rounded-3xl border-2 border-[#E8E8E8] bg-white p-6">
+          <View className="mb-4 h-14 w-14 items-center justify-center rounded-2xl bg-[#00C853]">
+            <Package size={28} color="white" />
+          </View>
+          <Text
+            className="mb-2 text-[24px] font-bold text-[#0F0F0F]"
+            style={{ fontFamily: "Poppins" }}
+          >
+            Create your fridge
           </Text>
-          <Text className="mb-5 text-[15px] leading-6 text-[#666666]">
-            You do not have a fridge compartment yet. Create one before adding items.
+          <Text
+            className="mb-6 text-[15px] font-medium leading-6 text-[#6B6B6B]"
+            style={{ fontFamily: "Poppins" }}
+          >
+            Set up your first compartment to start tracking items.
           </Text>
 
           <TextInput
             value={compartmentName}
             onChangeText={setCompartmentName}
-            placeholder="My fridge"
-            className="rounded-2xl border border-[#E5E7EB] bg-[#F8FAF7] px-4 py-4 text-base text-[#1a1a1a]"
+            placeholder="My Fridge"
+            placeholderTextColor="#9A9A9A"
+            className="rounded-2xl border-2 border-[#E8E8E8] bg-[#FAFAFA] px-4 py-4 text-[15px] font-medium text-[#0F0F0F]"
+            style={{ fontFamily: "Poppins" }}
             editable={!isMutating}
             maxLength={100}
           />
 
           <TouchableOpacity
-            className="mt-4 rounded-2xl px-6 py-4"
-            style={{ backgroundColor: palette.light.tint, opacity: isMutating ? 0.7 : 1 }}
+            className="mt-4 rounded-2xl bg-[#0F0F0F] px-6 py-4"
+            style={{ opacity: isMutating ? 0.7 : 1 }}
             onPress={() => {
               void handleCreateCompartment();
             }}
             disabled={isMutating}
           >
-            <Text className="text-center text-base font-bold text-white">
+            <Text
+              className="text-center text-[15px] font-bold text-white"
+              style={{ fontFamily: "Poppins" }}
+            >
               {isMutating ? "Creating..." : "Create Compartment"}
             </Text>
           </TouchableOpacity>
@@ -227,43 +461,77 @@ export default function HomeScreen() {
   }
 
   return (
-    <View
-      className="flex-1 bg-[#f8faf7]"
-      style={{ paddingBottom: insets.bottom + 80 }}
-    >
-      <View className="p-4">
-        <Text className="mb-3 text-[24px] font-extrabold text-[#1a1a1a]">
-          {compartment?.name ?? "Your fridge"}
+    <View className="flex-1 bg-[#FAFAFA]">
+      <View className="px-5 pb-2" style={{ paddingTop: insets.top + 12 }}>
+        <Text
+          className="text-[28px] font-bold text-[#0F0F0F]"
+          style={{ fontFamily: "Poppins" }}
+        >
+          {compartment?.name ?? "Your Fridge"}
         </Text>
+        <Text
+          className="text-[15px] font-medium text-[#6B6B6B]"
+          style={{ fontFamily: "Poppins" }}
+        >
+          {stats.total} {stats.total === 1 ? "item" : "items"} tracked
+        </Text>
+      </View>
+
+      <View className="px-5 pb-2 pt-2">
         <View className="flex-row gap-3">
-          <View className="flex-1 items-center rounded-2xl bg-[#E8F5E9] p-4">
-            <Text className="text-2xl font-extrabold" style={{ color: palette.light.fresh }}>
+          <View className="flex-1 rounded-2xl border-2 border-[#00C853] bg-white p-4">
+            <Text
+              className="text-[28px] font-bold text-[#00C853]"
+              style={{ fontFamily: "Poppins" }}
+            >
               {stats.fresh}
             </Text>
-            <Text className="mt-1 text-xs font-semibold text-[#666666]">Fresh</Text>
-          </View>
-          <View className="flex-1 items-center rounded-2xl bg-[#FFF3E0] p-4">
             <Text
-              className="text-2xl font-extrabold"
-              style={{ color: palette.light.expiringSoon }}
+              className="mt-1 text-[12px] font-bold uppercase tracking-wider text-[#6B6B6B]"
+              style={{ fontFamily: "Poppins" }}
+            >
+              Fresh
+            </Text>
+          </View>
+          <View className="flex-1 rounded-2xl border-2 border-[#FF9100] bg-white p-4">
+            <Text
+              className="text-[28px] font-bold text-[#FF9100]"
+              style={{ fontFamily: "Poppins" }}
             >
               {stats.expiringSoon}
             </Text>
-            <Text className="mt-1 text-xs font-semibold text-[#666666]">Expiring</Text>
+            <Text
+              className="mt-1 text-[12px] font-bold uppercase tracking-wider text-[#6B6B6B]"
+              style={{ fontFamily: "Poppins" }}
+            >
+              Expiring
+            </Text>
           </View>
-          <View className="flex-1 items-center rounded-2xl bg-[#FFEBEE] p-4">
-            <Text className="text-2xl font-extrabold" style={{ color: palette.light.expired }}>
+          <View className="flex-1 rounded-2xl border-2 border-[#FF1744] bg-white p-4">
+            <Text
+              className="text-[28px] font-bold text-[#FF1744]"
+              style={{ fontFamily: "Poppins" }}
+            >
               {stats.expired}
             </Text>
-            <Text className="mt-1 text-xs font-semibold text-[#666666]">Expired</Text>
+            <Text
+              className="mt-1 text-[12px] font-bold uppercase tracking-wider text-[#6B6B6B]"
+              style={{ fontFamily: "Poppins" }}
+            >
+              Expired
+            </Text>
           </View>
         </View>
 
         {stats.expired > 0 && (
-          <View className="mt-3 flex-row items-center justify-center gap-2 rounded-xl bg-[#FFEBEE] p-3">
-            <AlertTriangle size={20} color={palette.light.expired} />
-            <Text className="font-semibold" style={{ color: palette.light.expired }}>
-              You have {stats.expired} expired item{stats.expired !== 1 ? "s" : ""}!
+          <View className="mt-3 flex-row items-center gap-3 rounded-2xl border-2 border-[#FF1744] bg-[#FF1744] p-4">
+            <AlertCircle size={24} color="white" />
+            <Text
+              className="flex-1 text-[14px] font-semibold text-white"
+              style={{ fontFamily: "Poppins" }}
+            >
+              {stats.expired} expired item{stats.expired !== 1 ? "s" : ""} need
+              attention
             </Text>
           </View>
         )}
@@ -271,10 +539,20 @@ export default function HomeScreen() {
 
       {items.length === 0 ? (
         <View className="flex-1 items-center justify-center px-8">
-          <Text className="mb-4 text-[64px]">🥗</Text>
-          <Text className="mb-2 text-[22px] font-bold text-[#1a1a1a]">Your fridge is empty</Text>
-          <Text className="text-center text-[15px] text-[#666666]">
-            Tap Add Items to start tracking your food
+          <View className="mb-4 h-20 w-20 items-center justify-center rounded-3xl bg-[#F0F0F0]">
+            <Package size={40} color="#9A9A9A" />
+          </View>
+          <Text
+            className="mb-1 text-center text-[20px] font-bold text-[#0F0F0F]"
+            style={{ fontFamily: "Poppins" }}
+          >
+            Empty fridge
+          </Text>
+          <Text
+            className="text-center text-[15px] font-medium text-[#6B6B6B]"
+            style={{ fontFamily: "Poppins" }}
+          >
+            Tap Add to scan your first items
           </Text>
         </View>
       ) : (
@@ -282,10 +560,21 @@ export default function HomeScreen() {
           data={sortedItems}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 12 }}
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingHorizontal: 20,
+            paddingTop: 12,
+            paddingBottom: 24,
+          }}
+          keyboardShouldPersistTaps="handled"
+          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#00C853"
+            />
           }
         />
       )}

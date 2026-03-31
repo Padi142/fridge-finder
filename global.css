@@ -1,3 +1,69 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Poppins Font Import */
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap");
+
+/* Base styles */
+* {
+  font-family: "Poppins", system-ui, sans-serif;
+}
+
+/* Custom utility classes for Gen Z aesthetic */
+@layer utilities {
+  /* Bold, purposeful shadows - no blur-heavy shadows */
+  .shadow-card {
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.04);
+  }
+
+  .shadow-elevated {
+    box-shadow: 0 4px 0 rgba(0, 0, 0, 0.06);
+  }
+
+  /* Sharp borders for Gen Z look */
+  .border-sharp {
+    border-width: 2px;
+  }
+
+  /* Status indicator dots */
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+
+  /* Bold typography scale */
+  .text-display {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  .text-heading {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+
+  .text-subheading {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.2px;
+  }
+
+  .text-body {
+    font-size: 15px;
+    font-weight: 500;
+  }
+
+  .text-caption {
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .text-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+}

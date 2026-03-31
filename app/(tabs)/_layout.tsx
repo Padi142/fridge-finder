@@ -1,47 +1,65 @@
 import { Tabs } from "expo-router";
 import { Home, PlusCircle, Settings } from "lucide-react-native";
 import React from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import palette from "@/constants/colors";
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+
   return (
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: palette.light.tint,
-        headerShown: true,
+        tabBarInactiveTintColor: palette.light.textMuted,
+        headerShown: false,
         tabBarStyle: {
-          backgroundColor: palette.light.card,
+          backgroundColor: palette.light.surface,
+          borderTopWidth: 2,
           borderTopColor: palette.light.border,
+          height: 64 + insets.bottom,
+          paddingBottom: Math.max(insets.bottom, 12),
+          paddingTop: 10,
+          elevation: 0,
+          shadowOpacity: 0,
         },
-        headerStyle: {
-          backgroundColor: palette.light.background,
+        tabBarLabelStyle: {
+          fontFamily: "Poppins",
+          fontSize: 12,
+          fontWeight: "600",
+          marginTop: 4,
         },
-        headerTitleStyle: {
-          fontWeight: "700",
-          color: palette.light.text,
+        tabBarIconStyle: {
+          marginBottom: 0,
         },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: "My Fridge",
-          tabBarIcon: ({ color }) => <Home color={color} size={24} />,
+          title: "Fridge",
+          tabBarIcon: ({ color, size }) => (
+            <Home color={color} size={24} strokeWidth={2.5} />
+          ),
         }}
       />
       <Tabs.Screen
         name="add"
         options={{
-          title: "Add Items",
-          tabBarIcon: ({ color }) => <PlusCircle color={color} size={24} />,
+          title: "Add",
+          tabBarIcon: ({ color, size }) => (
+            <PlusCircle color={color} size={24} strokeWidth={2.5} />
+          ),
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: "Settings",
-          tabBarIcon: ({ color }) => <Settings color={color} size={24} />,
+          tabBarIcon: ({ color, size }) => (
+            <Settings color={color} size={24} strokeWidth={2.5} />
+          ),
         }}
       />
     </Tabs>

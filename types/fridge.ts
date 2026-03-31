@@ -1,3 +1,5 @@
+import { getCalendarDayDifference } from "@/lib/date";
+
 export interface FridgeItem {
   id: string;
   name: string;
@@ -38,13 +40,14 @@ export interface DetectedItem {
   confidence: number;
 }
 
+export interface DetectedItemInput extends DetectedItem {
+  expiryDate: string;
+}
+
 export type ExpiryStatus = "fresh" | "expiringSoon" | "expired";
 
 export function getExpiryStatus(expiryDate: string): ExpiryStatus {
-  const now = new Date();
-  const expiry = new Date(expiryDate);
-  const diffTime = expiry.getTime() - now.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const diffDays = getDaysUntilExpiry(expiryDate);
 
   if (diffDays < 0) return "expired";
   if (diffDays <= 3) return "expiringSoon";
@@ -52,10 +55,7 @@ export function getExpiryStatus(expiryDate: string): ExpiryStatus {
 }
 
 export function getDaysUntilExpiry(expiryDate: string): number {
-  const now = new Date();
-  const expiry = new Date(expiryDate);
-  const diffTime = expiry.getTime() - now.getTime();
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return getCalendarDayDifference(expiryDate);
 }
 
 export const categoryIcons: Record<FoodCategory, string> = {
